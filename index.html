@@ -68,6 +68,51 @@
             padding: 40px;
             color: #ff3333;
         }
+        
+        .translate-button {
+            margin-top: 20px;
+            padding: 12px 24px;
+            background: var(--tg-theme-button-color, #3390ec);
+            color: var(--tg-theme-button-text-color, #ffffff);
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+            transition: opacity 0.2s;
+        }
+        
+        .translate-button:hover {
+            opacity: 0.9;
+        }
+        
+        .translate-button:active {
+            opacity: 0.8;
+        }
+        
+        .translate-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .translation {
+            margin-top: 20px;
+            padding: 15px;
+            background: var(--tg-theme-bg-color, #ffffff);
+            border-left: 4px solid var(--tg-theme-button-color, #3390ec);
+            border-radius: 8px;
+            font-size: 16px;
+            line-height: 1.8;
+        }
+        
+        .translation-label {
+            font-weight: 600;
+            color: var(--tg-theme-button-color, #3390ec);
+            margin-bottom: 10px;
+            font-size: 14px;
+            text-transform: uppercase;
+        }
     </style>
 </head>
 <body>
@@ -78,6 +123,7 @@
         <div id="content" class="content">
             <div class="loading">Загрузка...</div>
         </div>
+        <div id="translation-container" style="display: none;"></div>
     </div>
 
     <script>
@@ -108,6 +154,7 @@
         function displayContent(type, text) {
             const contentDiv = document.getElementById('content');
             const headerTitle = document.getElementById('header-title');
+            const translationContainer = document.getElementById('translation-container');
             
             // Устанавливаем заголовок в зависимости от типа
             switch(type) {
@@ -136,8 +183,74 @@
                 .replace(/###+\s*/g, '')
                 .replace(/\n/g, '<br>');
             
-            contentDiv.innerHTML = `<div class="explanation">${formatted}</div>`;
+            let contentHTML = `<div class="explanation">${formatted}</div>`;
+            
+            // Добавляем кнопку "Перевести" только для типа "text"
+            if (type === 'text') {
+                // Экранируем текст для безопасной передачи в onclick
+                const safeText = text.replace(/'/g, "\\'").replace(/\n/g, ' ');
+                contentHTML += `<button class="translate-button" onclick="translateText('${encodeURIComponent(safeText)}')">🌐 Перевести</button>`;
+            }
+            
+            contentDiv.innerHTML = contentHTML;
+            translationContainer.style.display = 'none';
+            translationContainer.innerHTML = '';
         }
+        
+        // Функция перевода текста
+        async function translateText(text) {
+            const button = document.querySelector('.translate-button');
+            const translationContainer = document.getElementById('translation-container');
+            
+            if (!button) return;
+            
+            const decodedText = decodeURIComponent(text);
+            
+            // Если перевод уже показан, скрываем его
+            if (translationContainer.style.display === 'block' && translationContainer.innerHTML && !translationContainer.innerHTML.includes('Перевожу')) {
+                translationContainer.style.display = 'none';
+                translationContainer.innerHTML = '';
+                button.textContent = '🌐 Перевести';
+                return;
+            }
+            
+            button.disabled = true;
+            button.textContent = 'Перевожу...';
+            
+            // Показываем индикатор загрузки
+            translationContainer.style.display = 'block';
+            translationContainer.innerHTML = '<div class="loading">Перевожу...</div>';
+            
+            try {
+                // Отправляем запрос на перевод через Telegram WebApp API
+                // Бот получит данные, переведет и отправит перевод как сообщение
+                tg.sendData(JSON.stringify({
+                    type: 'translate',
+                    text: decodedText
+                }));
+                
+                // Показываем уведомление, что перевод будет отправлен в чат
+                // Для отображения в WebApp используем простой подход
+                translationContainer.innerHTML = '<div class="translation"><div class="translation-label">Перевод:</div><div>Перевод будет отправлен в чат. Проверьте сообщения от бота.</div></div>';
+                
+                button.disabled = false;
+                button.textContent = '🌐 Скрыть';
+                
+            } catch (error) {
+                console.error('Ошибка при переводе:', error);
+                translationContainer.innerHTML = '<div class="error">Ошибка при переводе. Попробуйте позже.</div>';
+                button.disabled = false;
+                button.textContent = '🌐 Перевести';
+            }
+        }
+        
+        // Обработка данных от бота
+        tg.onEvent('mainButtonClicked', () => {
+            const data = getData();
+            if (data.type === 'text' && data.content) {
+                translateText(data.content);
+            }
+        });
 
         // Загружаем данные при загрузке страницы
         window.addEventListener('DOMContentLoaded', () => {
