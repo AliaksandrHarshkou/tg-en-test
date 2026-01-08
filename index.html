@@ -223,14 +223,35 @@
             
             try {
                 // Отправляем запрос на перевод через Telegram WebApp API
-                // Бот получит данные, переведет и отправит перевод как сообщение
-                tg.sendData(JSON.stringify({
+                const dataToSend = {
                     type: 'translate',
                     text: decodedText
-                }));
+                };
+                
+                console.log('Отправляю данные в бот:', dataToSend);
+                console.log('Telegram WebApp объект:', tg);
+                console.log('sendData доступен:', typeof tg.sendData);
+                console.log('Версия WebApp:', tg.version);
+                
+                // Проверяем, что sendData доступен
+                if (typeof tg.sendData !== 'function') {
+                    console.error('sendData не доступен! Доступные методы:', Object.keys(tg));
+                    throw new Error('sendData не доступен в Telegram WebApp API');
+                }
+                
+                // Используем sendData для отправки данных боту
+                // sendData отправляет данные боту, и они придут как update с web_app_data
+                const dataString = JSON.stringify(dataToSend);
+                console.log('Отправляю строку данных:', dataString);
+                
+                tg.sendData(dataString);
+                
+                console.log('Данные отправлены через sendData');
+                
+                // Также показываем уведомление пользователю
+                tg.showAlert('Запрос на перевод отправлен боту!');
                 
                 // Показываем уведомление, что перевод будет отправлен в чат
-                // Для отображения в WebApp используем простой подход
                 translationContainer.innerHTML = '<div class="translation"><div class="translation-label">Перевод:</div><div>Перевод будет отправлен в чат. Проверьте сообщения от бота.</div></div>';
                 
                 button.disabled = false;
@@ -238,7 +259,7 @@
                 
             } catch (error) {
                 console.error('Ошибка при переводе:', error);
-                translationContainer.innerHTML = '<div class="error">Ошибка при переводе. Попробуйте позже.</div>';
+                translationContainer.innerHTML = '<div class="error">Ошибка при переводе: ' + error.message + '</div>';
                 button.disabled = false;
                 button.textContent = '🌐 Перевести';
             }
