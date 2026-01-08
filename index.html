@@ -124,6 +124,10 @@
             <div class="loading">Загрузка...</div>
         </div>
         <div id="translation-container" style="display: none;"></div>
+        <div id="logs-container" style="display: none; margin-top: 20px; padding: 15px; background: #f5f5f5; border-radius: 8px; font-size: 12px; max-height: 200px; overflow-y: auto;">
+            <div style="font-weight: 600; margin-bottom: 10px; color: #666;">📋 Логи:</div>
+            <div id="logs-content" style="font-family: monospace; white-space: pre-wrap; word-break: break-all;"></div>
+        </div>
     </div>
 
     <script>
@@ -131,6 +135,42 @@
         const tg = window.Telegram.WebApp;
         tg.ready();
         tg.expand();
+        
+        // Функция для добавления логов в интерфейс
+        function addLog(message, type = 'info') {
+            const logsContainer = document.getElementById('logs-container');
+            const logsContent = document.getElementById('logs-content');
+            
+            if (!logsContainer || !logsContent) return;
+            
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = `[${timestamp}] ${type.toUpperCase()}: ${message}\n`;
+            
+            logsContent.textContent += logEntry;
+            logsContainer.style.display = 'block';
+            logsContainer.scrollTop = logsContainer.scrollHeight;
+            
+            // Также логируем в консоль
+            if (type === 'error') {
+                console.error(message);
+            } else {
+                console.log(message);
+            }
+        }
+        
+        // Переопределяем console.log для отображения в интерфейсе
+        const originalConsoleLog = console.log;
+        const originalConsoleError = console.error;
+        
+        console.log = function(...args) {
+            originalConsoleLog.apply(console, args);
+            addLog(args.join(' '), 'info');
+        };
+        
+        console.error = function(...args) {
+            originalConsoleError.apply(console, args);
+            addLog(args.join(' '), 'error');
+        };
 
         // Получаем данные из initData
         function getInitData() {
@@ -199,21 +239,32 @@
         
         // Функция перевода текста
         async function translateText(text) {
+            addLog('=== НАЧАЛО ПЕРЕВОДА ===', 'info');
+            addLog('Получен текст для перевода (первые 50 символов): ' + text.substring(0, 50), 'info');
+            
             const button = document.querySelector('.translate-button');
             const translationContainer = document.getElementById('translation-container');
             
-            if (!button) return;
+            if (!button) {
+                addLog('ОШИБКА: Кнопка не найдена!', 'error');
+                return;
+            }
+            
+            addLog('Кнопка найдена', 'info');
             
             const decodedText = decodeURIComponent(text);
+            addLog('Декодированный текст (первые 50 символов): ' + decodedText.substring(0, 50), 'info');
             
             // Если перевод уже показан, скрываем его
             if (translationContainer.style.display === 'block' && translationContainer.innerHTML && !translationContainer.innerHTML.includes('Перевожу')) {
+                addLog('Скрываю перевод', 'info');
                 translationContainer.style.display = 'none';
                 translationContainer.innerHTML = '';
                 button.textContent = '🌐 Перевести';
                 return;
             }
             
+            addLog('Отключаю кнопку и показываю загрузку', 'info');
             button.disabled = true;
             button.textContent = 'Перевожу...';
             
@@ -222,44 +273,63 @@
             translationContainer.innerHTML = '<div class="loading">Перевожу...</div>';
             
             try {
+                addLog('Проверяю Telegram WebApp объект...', 'info');
+                addLog('tg.sendData тип: ' + typeof tg.sendData, 'info');
+                addLog('tg.version: ' + (tg.version || 'неизвестно'), 'info');
+                addLog('Доступные методы tg: ' + Object.keys(tg).slice(0, 10).join(', ') + '...', 'info');
+                
+                // Проверяем, что sendData доступен
+                if (typeof tg.sendData !== 'function') {
+                    const errorMsg = 'sendData не доступен! Доступные методы: ' + Object.keys(tg).join(', ');
+                    addLog(errorMsg, 'error');
+                    throw new Error(errorMsg);
+                }
+                
+                addLog('sendData доступен ✓', 'info');
+                
                 // Отправляем запрос на перевод через Telegram WebApp API
                 const dataToSend = {
                     type: 'translate',
                     text: decodedText
                 };
                 
-                console.log('Отправляю данные в бот:', dataToSend);
-                console.log('Telegram WebApp объект:', tg);
-                console.log('sendData доступен:', typeof tg.sendData);
-                console.log('Версия WebApp:', tg.version);
+                addLog('Данные для отправки подготовлены', 'info');
                 
-                // Проверяем, что sendData доступен
-                if (typeof tg.sendData !== 'function') {
-                    console.error('sendData не доступен! Доступные методы:', Object.keys(tg));
-                    throw new Error('sendData не доступен в Telegram WebApp API');
+                const dataString = JSON.stringify(dataToSend);
+                addLog('JSON строка создана, длина: ' + dataString.length + ' символов', 'info');
+                
+                // Показываем информацию пользователю
+                translationContainer.innerHTML = '<div class="loading">Отправляю запрос боту...</div>';
+                
+                addLog('Вызываю tg.sendData...', 'info');
+                tg.sendData(dataString);
+                addLog('tg.sendData вызван ✓', 'info');
+                
+                // Показываем уведомление
+                try {
+                    tg.showAlert('Запрос на перевод отправлен боту!');
+                    addLog('Уведомление показано ✓', 'info');
+                } catch (alertError) {
+                    addLog('Не удалось показать уведомление: ' + alertError.message, 'error');
                 }
                 
-                // Используем sendData для отправки данных боту
-                // sendData отправляет данные боту, и они придут как update с web_app_data
-                const dataString = JSON.stringify(dataToSend);
-                console.log('Отправляю строку данных:', dataString);
-                
-                tg.sendData(dataString);
-                
-                console.log('Данные отправлены через sendData');
-                
-                // Также показываем уведомление пользователю
-                tg.showAlert('Запрос на перевод отправлен боту!');
-                
-                // Показываем уведомление, что перевод будет отправлен в чат
-                translationContainer.innerHTML = '<div class="translation"><div class="translation-label">Перевод:</div><div>Перевод будет отправлен в чат. Проверьте сообщения от бота.</div></div>';
+                // Показываем информацию пользователю
+                translationContainer.innerHTML = '<div class="translation"><div class="translation-label">Перевод:</div><div>✅ Запрос отправлен боту!<br>Перевод будет отправлен в чат. Проверьте сообщения от бота.</div></div>';
                 
                 button.disabled = false;
                 button.textContent = '🌐 Скрыть';
                 
+                addLog('=== ПЕРЕВОД ЗАВЕРШЕН (ожидание ответа от бота) ===', 'info');
+                
             } catch (error) {
-                console.error('Ошибка при переводе:', error);
-                translationContainer.innerHTML = '<div class="error">Ошибка при переводе: ' + error.message + '</div>';
+                addLog('=== ОШИБКА ПРИ ПЕРЕВОДЕ ===', 'error');
+                addLog('Тип ошибки: ' + error.constructor.name, 'error');
+                addLog('Сообщение: ' + error.message, 'error');
+                if (error.stack) {
+                    addLog('Стек: ' + error.stack.substring(0, 200), 'error');
+                }
+                
+                translationContainer.innerHTML = '<div class="error">❌ Ошибка при переводе:<br>' + error.message + '<br><br>Проверьте логи ниже.</div>';
                 button.disabled = false;
                 button.textContent = '🌐 Перевести';
             }
@@ -275,8 +345,30 @@
 
         // Загружаем данные при загрузке страницы
         window.addEventListener('DOMContentLoaded', () => {
+            addLog('=== ЗАГРУЗКА WEBAPP ===', 'info');
+            addLog('Telegram WebApp версия: ' + (tg.version || 'неизвестно'), 'info');
+            addLog('Платформа: ' + (tg.platform || 'неизвестно'), 'info');
+            addLog('sendData доступен: ' + (typeof tg.sendData === 'function' ? 'да' : 'нет'), 'info');
+            
             const { type, content } = getData();
+            addLog('Тип контента: ' + type, 'info');
+            addLog('Длина контента: ' + (content ? content.length : 0) + ' символов', 'info');
+            
             displayContent(type, content);
+            addLog('Контент отображен', 'info');
+        });
+        
+        // Логируем все события WebApp
+        tg.onEvent('viewportChanged', () => {
+            console.log('Viewport changed');
+        });
+        
+        tg.onEvent('themeChanged', () => {
+            console.log('Theme changed');
+        });
+        
+        tg.onEvent('mainButtonClicked', () => {
+            console.log('Main button clicked');
         });
 
         // Обработка сообщений от бота (если используется postMessage)
