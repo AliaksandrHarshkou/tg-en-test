@@ -143,12 +143,7 @@
                 const logsContent = document.getElementById('logs-content');
                 
                 if (!logsContainer || !logsContent) {
-                    // Если элементы еще не загружены, логируем только в консоль
-                    if (type === 'error') {
-                        console.error(message);
-                    } else {
-                        console.log(message);
-                    }
+                    // Если элементы еще не загружены, просто выходим
                     return;
                 }
                 
@@ -158,15 +153,11 @@
                 logsContent.textContent += logEntry;
                 logsContainer.style.display = 'block';
                 logsContainer.scrollTop = logsContainer.scrollHeight;
-                
-                // Также логируем в консоль
-                if (type === 'error') {
-                    console.error(message);
-                } else {
-                    console.log(message);
-                }
             } catch (error) {
-                console.error('Ошибка при добавлении лога:', error);
+                // Используем оригинальный console.error для критических ошибок
+                if (window.console && window.console.error) {
+                    window.console.error('Ошибка при добавлении лога:', error);
+                }
             }
         }
 
@@ -225,20 +216,44 @@
             
             // Добавляем кнопку "Перевести" только для типа "text"
             if (type === 'text') {
-                // Экранируем текст для безопасной передачи в onclick
-                const safeText = text.replace(/'/g, "\\'").replace(/\n/g, ' ');
-                contentHTML += `<button class="translate-button" onclick="translateText('${encodeURIComponent(safeText)}')">🌐 Перевести</button>`;
+                // Сохраняем текст в data-атрибуте для безопасной передачи
+                contentHTML += `<button class="translate-button" data-text="${encodeURIComponent(text)}">🌐 Перевести</button>`;
             }
             
             contentDiv.innerHTML = contentHTML;
             translationContainer.style.display = 'none';
             translationContainer.innerHTML = '';
+            
+            // Добавляем обработчик события для кнопки "Перевести" после вставки HTML
+            if (type === 'text') {
+                const translateButton = contentDiv.querySelector('.translate-button');
+                if (translateButton) {
+                    addLog('Кнопка "Перевести" найдена, добавляю обработчик события', 'info');
+                    translateButton.addEventListener('click', function(e) {
+                        addLog('=== КЛИК ПО КНОПКЕ "ПЕРЕВЕСТИ" ===', 'info');
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const textToTranslate = decodeURIComponent(this.getAttribute('data-text') || '');
+                        addLog('Текст из data-атрибута (первые 50 символов): ' + (textToTranslate ? textToTranslate.substring(0, 50) : 'ПУСТО'), 'info');
+                        if (textToTranslate) {
+                            addLog('Вызываю translateText...', 'info');
+                            translateText(textToTranslate);
+                        } else {
+                            addLog('ОШИБКА: Текст для перевода не найден в data-атрибуте', 'error');
+                        }
+                    });
+                    addLog('Обработчик события для кнопки "Перевести" успешно добавлен ✓', 'info');
+                } else {
+                    addLog('ОШИБКА: Кнопка "Перевести" не найдена после вставки HTML', 'error');
+                }
+            }
         }
         
-        // Функция перевода текста
-        async function translateText(text) {
+        // Функция перевода текста (должна быть доступна глобально)
+        window.translateText = async function(text) {
             addLog('=== НАЧАЛО ПЕРЕВОДА ===', 'info');
-            addLog('Получен текст для перевода (первые 50 символов): ' + text.substring(0, 50), 'info');
+            addLog('Функция translateText вызвана!', 'info');
+            addLog('Получен текст для перевода (первые 50 символов): ' + (text ? text.substring(0, 50) : 'ТЕКСТ ПУСТ!'), 'info');
             
             const button = document.querySelector('.translate-button');
             const translationContainer = document.getElementById('translation-container');
@@ -331,7 +346,7 @@
                 button.disabled = false;
                 button.textContent = '🌐 Перевести';
             }
-        }
+        };
         
         // Обработка данных от бота
         tg.onEvent('mainButtonClicked', () => {
