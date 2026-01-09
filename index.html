@@ -172,10 +172,12 @@
             const urlParams = new URLSearchParams(window.location.search);
             const type = urlParams.get('type'); // 'explanation', 'text', 'hints'
             const data = urlParams.get('data');
+            const translateUrl = urlParams.get('translate_url'); // URL endpoint для переводов
             
             return {
                 type: type || 'explanation',
-                content: data ? decodeURIComponent(data) : null
+                content: data ? decodeURIComponent(data) : null,
+                translateUrl: translateUrl ? decodeURIComponent(translateUrl) : null
             };
         }
 
@@ -286,53 +288,68 @@
             translationContainer.innerHTML = '<div class="loading">Перевожу...</div>';
             
             try {
-                addLog('Проверяю Telegram WebApp объект...', 'info');
-                addLog('tg.sendData тип: ' + typeof tg.sendData, 'info');
-                addLog('tg.version: ' + (tg.version || 'неизвестно'), 'info');
-                addLog('Доступные методы tg: ' + Object.keys(tg).slice(0, 10).join(', ') + '...', 'info');
+                // Получаем URL endpoint для переводов из параметров URL
+                const data = getData();
+                let translateUrl = data.translateUrl;
                 
-                // Проверяем, что sendData доступен
-                if (typeof tg.sendData !== 'function') {
-                    const errorMsg = 'sendData не доступен! Доступные методы: ' + Object.keys(tg).join(', ');
-                    addLog(errorMsg, 'error');
-                    throw new Error(errorMsg);
+                if (!translateUrl) {
+                    // Если не указан в параметрах, используем относительный путь
+                    // Предполагаем, что endpoint находится на том же домене
+                    const currentUrl = new URL(window.location.href);
+                    translateUrl = `${currentUrl.protocol}//${currentUrl.hostname}:8080/translate`;
+                    addLog('URL endpoint не указан, используем по умолчанию: ' + translateUrl, 'info');
+                } else {
+                    addLog('URL endpoint получен из параметров: ' + translateUrl, 'info');
                 }
                 
-                addLog('sendData доступен ✓', 'info');
+                // Получаем initData от Telegram WebApp для проверки подлинности
+                const initData = tg.initData || '';
+                if (!initData) {
+                    throw new Error('Не удалось получить initData от Telegram WebApp');
+                }
+                addLog('initData получен (первые 50 символов): ' + initData, 'info');
                 
-                // Отправляем запрос на перевод через Telegram WebApp API
+                // Отправляем HTTP запрос на перевод
                 const dataToSend = {
-                    type: 'translate',
-                    text: decodedText
+                    text: decodedText,
+                    initData: initData
                 };
                 
-                addLog('Данные для отправки подготовлены', 'info');
+                addLog('Отправляю HTTP запрос на перевод...', 'info');
+                translationContainer.innerHTML = '<div class="loading">Отправляю запрос...</div>';
                 
-                const dataString = JSON.stringify(dataToSend);
-                addLog('JSON строка создана, длина: ' + dataString.length + ' символов', 'info');
+                const response = await fetch(translateUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(dataToSend)
+                });
                 
-                // Показываем информацию пользователю
-                translationContainer.innerHTML = '<div class="loading">Отправляю запрос боту...</div>';
+                addLog('Получен ответ от сервера: статус ' + response.status, 'info');
                 
-                addLog('Вызываю tg.sendData...', 'info');
-                tg.sendData(dataString);
-                addLog('tg.sendData вызван ✓', 'info');
-                
-                // Показываем уведомление
-                try {
-                    tg.showAlert('Запрос на перевод отправлен боту!');
-                    addLog('Уведомление показано ✓', 'info');
-                } catch (alertError) {
-                    addLog('Не удалось показать уведомление: ' + alertError.message, 'error');
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({ error: 'Неизвестная ошибка' }));
+                    throw new Error(errorData.error || `Ошибка HTTP: ${response.status}`);
                 }
                 
-                // Показываем информацию пользователю
-                translationContainer.innerHTML = '<div class="translation"><div class="translation-label">Перевод:</div><div>✅ Запрос отправлен боту!<br>Перевод будет отправлен в чат. Проверьте сообщения от бота.</div></div>';
+                const result = await response.json();
+                addLog('Перевод получен: ' + (result.translation ? result.translation.substring(0, 50) : 'ПУСТО'), 'info');
                 
-                button.disabled = false;
-                button.textContent = '🌐 Скрыть';
-                
-                addLog('=== ПЕРЕВОД ЗАВЕРШЕН (ожидание ответа от бота) ===', 'info');
+                if (result.translation) {
+                    // Отображаем перевод прямо в Mini App
+                    translationContainer.innerHTML = `
+                        <div class="translation">
+                            <div class="translation-label">🌐 Перевод:</div>
+                            <div>${result.translation.replace(/\n/g, '<br>')}</div>
+                        </div>
+                    `;
+                    button.disabled = false;
+                    button.textContent = '🌐 Скрыть';
+                    addLog('Перевод успешно отображен ✓', 'info');
+                } else {
+                    throw new Error('Перевод не получен от сервера');
+                }
                 
             } catch (error) {
                 addLog('=== ОШИБКА ПРИ ПЕРЕВОДЕ ===', 'error');
